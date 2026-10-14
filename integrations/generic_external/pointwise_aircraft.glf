@@ -1,4 +1,4 @@
-# Build and quality-check a spherical external flow volume from the ANSA STL.
+# Build an external fluid domain around the measured ANSA surface bounds.
 package require PWI_Glyph
 pw::Application reset
 
@@ -39,7 +39,7 @@ if {[catch {
         set surfaceCells [expr {$surfaceCells + [$wall getCellCount]}]
         puts "ANSA_SURFACE_DOMAIN_$domainOrdinal=[list [$wall getName] [$wall getCellCount] $ext]"
     }
-    if {$surfaceCells < 5000} { error "ANSA surface grid unexpectedly coarse" }
+    if {$surfaceCells < 4} { error "ANSA surface grid is empty or incomplete" }
     puts "ANSA_SURFACE_CELLS=$surfaceCells"
     puts "DATABASE_COUNT=[llength $dbImported]"
     if {[llength $dbImported] < 1} { error "No STL surface database created" }
@@ -56,6 +56,29 @@ if {[catch {
     puts "SURFACE_INTERSECTIONS=$intersectionCount"
     if {$intersectionCount != 0} { error "Surface self-intersection gate failed" }
 
+    # Measure all imported domains; do not assume an aircraft size or origin.
+    set lo {Inf Inf Inf}
+    set hi {-Inf -Inf -Inf}
+    foreach ext $beforeExtentList {
+        for {set axis 0} {$axis < 3} {incr axis} {
+            lset lo $axis [expr {min([lindex $lo $axis],[lindex $ext 0 $axis])}]
+            lset hi $axis [expr {max([lindex $hi $axis],[lindex $ext 1 $axis])}]
+        }
+    }
+    set center {}
+    set length 0.0
+    for {set axis 0} {$axis < 3} {incr axis} {
+        lappend center [expr {0.5*([lindex $lo $axis]+[lindex $hi $axis])}]
+        set length [expr {max($length,[lindex $hi $axis]-[lindex $lo $axis])}]
+    }
+    if {$length <= 0} {error "Invalid model bounds"}
+    set radiusRatio [expr {[llength $argv]>2 ? [lindex $argv 2] : 4.0}]
+    set wallRatio [expr {[llength $argv]>3 ? [lindex $argv 3] : 0.001}]
+    set layers [expr {[llength $argv]>4 ? [lindex $argv 4] : 3}]
+    set wallSpacing [expr {$length*$wallRatio}]
+    puts "MODEL_BOUNDS=$lo $hi"
+    puts "FARFIELD_RADIUS=[expr {$length*$radiusRatio}] CENTER=$center"
+    puts "WALL_SPACING=$wallSpacing LAYERS=$layers"
     pw::Application setCAESolver OpenFOAM 3
     puts "CAE_SOLVER=[pw::Application getCAESolver]"
     puts "CAE_BC_TYPES=[pw::BoundaryCondition getPhysicalTypes -usage CAE]"
@@ -72,24 +95,24 @@ if {[catch {
     $wallTrex setName AIRCRAFT_WALL_LAYER
     $wallTrex setConditionType Wall
     $wallTrex setGrowthRate 1.2
-    $wallTrex setGrowthWallSpacing 2.0
+    $wallTrex setGrowthWallSpacing $wallSpacing
     $wallTrex apply $wallDomains
     puts "WALL_TREX_TYPE=[$wallTrex getConditionType]"
     puts "WALL_TREX_INITIAL_SPACING=[$wallTrex getGrowthWallSpacing]"
 
     # External flow domain dimensions are based on the measured aircraft bounds.
-    # The initial template uses a 6 m spherical farfield for a 1.51 m aircraft.
+    # Farfield size is a user-controlled multiple of model length.
     set vm [pw::Application begin VolumeMesher $wallDomains]
     $vm setMeshType Unstructured
     $vm setFarfieldShapeType Sphere
-    $vm setFarfieldRadius 6000.0
-    $vm setFarfieldCenter {0.0 0.0 0.0}
-    $vm setSizeFieldBackgroundSpacing 500.0
+    $vm setFarfieldRadius [expr {$length*$radiusRatio}]
+    $vm setFarfieldCenter $center
+    $vm setSizeFieldBackgroundSpacing [expr {$length/3.0}]
     $vm setBoundaryLayerType GeometricGrowth
-    $vm setWallNormalSpacing 2.0
+    $vm setWallNormalSpacing $wallSpacing
     $vm setGrowthRate 1.2
     $vm setBoundaryConditionFilterType "Boundary Layer" Wall
-    $vm setBoundaryConditionFilterValue "Boundary Layer" 2.0
+    $vm setBoundaryConditionFilterValue "Boundary Layer" $wallSpacing
     puts "BL_FILTER_GROUP_COUNT=[llength [$vm getBoundaryConditionFilterGroups "Boundary Layer"]]"
     puts "BL_FILTER_TYPE=[$vm getBoundaryConditionFilterType "Boundary Layer"]"
     set created [$vm createGridEntities]
@@ -126,7 +149,7 @@ if {[catch {
     set blocks [pw::Grid getAll -type pw::BlockUnstructured]
     if {[llength $blocks] != 1} { error "Expected one unstructured fluid block" }
     set block [lindex $blocks 0]
-    $block setUnstructuredSolverAttribute TRexMaximumLayers 3
+    $block setUnstructuredSolverAttribute TRexMaximumLayers $layers
     $block setUnstructuredSolverAttribute TRexFullLayers 1
     $block setUnstructuredSolverAttribute TRexGrowthRate 1.2
     puts "BLOCK_BEFORE_CELLS=[$block getCellCount]"

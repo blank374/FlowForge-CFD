@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-DATA = ROOT / "data"
+DATA = Path(os.getenv("FLOWFORGE_DATA_DIR", str(ROOT / "data")))
 DATA.mkdir(exist_ok=True)
 DB = DATA / "flowforge.sqlite3"
 WSL_DISTRO = os.getenv("FLOWFORGE_WSL_DISTRO", "Ubuntu-F2")
@@ -516,6 +516,8 @@ def run_l1(rid: str, directory: Path, log: Path, solve: bool, cad_input: Path | 
         f"Validation: {result_data['engineering_validation']}.\n\n" +
         ("Velocity outliers above 0.15 m/s were observed; review farfield mesh/BC sensitivity.\n" if result_data.get("velocity_outlier_warning") else ""), encoding="utf-8")
     if solve:
+        from backend.reporting import write_report
+        write_report(directory, result_data)
         shutil.make_archive(str(directory / "openfoam_case"), "zip", root_dir=directory, base_dir="openfoam_case")
 
 
@@ -568,6 +570,16 @@ def artifact(rid: str, name: str):
     if not path.is_file():
         raise HTTPException(404, "Artifact not found")
     return FileResponse(path, filename=name)
+
+
+@app.get("/api/runs/{rid}/report")
+def view_report(rid: str):
+    if not rows("SELECT id FROM runs WHERE id=? AND status='success'", (rid,)):
+        raise HTTPException(409, "完整流程未成功，暂不能展示成功报告")
+    path = DATA / "runs" / rid / "report.html"
+    if not path.is_file():
+        raise HTTPException(404, "此历史运行没有生成 HTML 报告，请下载原报告")
+    return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'self'"})
 
 
 @app.get("/api/runs/{rid}/preview/{name}")

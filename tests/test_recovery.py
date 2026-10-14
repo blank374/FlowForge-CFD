@@ -11,16 +11,17 @@ def test_checkpoint_reuses_mesh_and_preserves_failure(tmp_path, monkeypatch):
         c.execute('CREATE TABLE files(id TEXT,project_id TEXT,name TEXT,path TEXT,size INTEGER,created TEXT)')
         c.execute('INSERT INTO files VALUES(?,?,?,?,?,?)',('f','p','model.ansa',str(source),8,'now'))
     app=FastAPI();workflow.register(app,data,tmp_path,{})
-    monkeypatch.setattr('backend.recovery.threading.Thread.start',lambda self:None)
     with TestClient(app) as client:
         job=client.post('/api/workflows/projects/p?file_id=f&manual=true').json();jid=job['id']
         base=data/'workflows'/jid/'v1';case=base/'openfoam_case'
         for name in ['0','constant/polyMesh','system']:(case/name).mkdir(parents=True)
+        for name in ['0/U','0/p','system/fvSchemes','system/fvSolution','constant/polyMesh/faces','constant/polyMesh/owner','constant/polyMesh/neighbour','constant/polyMesh/boundary']:(case/name).write_text('fixture')
         (case/'constant/polyMesh/points').write_bytes(b'real-mesh-fixture')
         (case/'system/controlDict').write_text('deltaT 0.0001;\nendTime 0.002;')
         (base/'checkMesh.log').write_text('Mesh OK.')
         (base/'solver.log').write_text('Courant Number mean: 1 max: 200001\n')
         assert client.post(f'/api/workflows/{jid}/retry-solver',json={'delta_t':-1}).status_code==422
+        monkeypatch.setattr('backend.recovery.threading.Thread.start',lambda self:None)
         response=client.post(f'/api/workflows/{jid}/retry-solver',json={'delta_t':0.000001})
         assert response.status_code==200,response.text
         assert response.json()['version']==2

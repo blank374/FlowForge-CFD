@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, Query
 from fastapi.responses import FileResponse
 
 
@@ -40,7 +40,8 @@ def register(app, data, root, config):
         "aircraft_volume.cgns": "pointwise/aircraft_volume.cgns",
         "pointwise.log": "pointwise/pointwise.log", "export.log": "pointwise/export.log",
         "checkMesh.log": "checkMesh.log", "solver.log": "solver.log",
-        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json",
+        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json", "external_setup.json": "external_setup.json", "manual_pointwise.json": "manual_pointwise.json",
+        **{name: name for name in ("report.html", "result.json", "U.png", "p.png", "residuals.png", "external_flow.pvsm", "slice_centers.csv", "openfoam_case.zip", "postprocess_0.log", "postprocess_1.log", "postprocess_2.log")},
     }
 
     @contextmanager
@@ -130,13 +131,26 @@ def register(app, data, root, config):
         pointwise_passed = (pointwise_log.is_file() and "GENERIC_POINTWISE_STATUS=ok" in
                             pointwise_log.read_text(encoding="utf-8", errors="replace") and
                             (version_dir / "pointwise" / "aircraft_volume.pw").is_file())
+        if (version_dir / "manual_pointwise.json").is_file():
+            export_log = version_dir / "pointwise/export.log"
+            pointwise_passed = (export_log.is_file() and "OPENFOAM_EXPORT_STATUS=ok" in export_log.read_text(errors="replace") and
+                                (version_dir / "pointwise/aircraft_volume.pw").is_file())
         check_log = version_dir / "checkMesh.log"
         mesh_passed = check_log.is_file() and "Mesh OK." in check_log.read_text(encoding="utf-8", errors="replace")
         solver_log = version_dir / "solver.log"
         solver_text = solver_log.read_text(encoding="utf-8", errors="replace") if solver_log.is_file() else ""
         courant = [float(x) for x in re.findall(r"Courant Number mean: [0-9.eE+-]+ max: ([0-9.eE+-]+)", solver_text)]
+        expected_end = 0.002
+        checkpoint = version_dir / "checkpoint.json"
+        if checkpoint.is_file():
+            try: expected_end = json.loads(checkpoint.read_text(encoding="utf-8"))["parameters"]["end_time"]
+            except (ValueError, KeyError): pass
+        final_fields = any(path.is_dir() and re.fullmatch(r"[0-9.eE+-]+", path.name) and
+                           abs(float(path.name) - expected_end) <= max(1e-8, expected_end * 1e-5) and
+                           (path / "U").is_file() and (path / "p").is_file()
+                           for path in (version_dir / "openfoam_case").iterdir()) if (version_dir / "openfoam_case").is_dir() else False
         solver_passed = ("\nEnd\n" in solver_text and bool(courant) and max(courant) <= 1.0 and
-                         (version_dir / "openfoam_case" / "0.002" / "U").is_file())
+                         final_fields and not re.search(r"FOAM FATAL|\bnan\b|\binf\b", solver_text, re.I))
         artifacts = [{"name": name, "size": (version_dir / relative).stat().st_size,
                       "url": f"/api/workflows/{job_id}/artifacts/{name}"}
                      for name, relative in allowed_artifacts.items() if (version_dir / relative).is_file()]
@@ -157,9 +171,9 @@ def register(app, data, root, config):
                            {"name": "ANSA 表面网格", "status": "PASSED" if surface_passed else ("RUNNING" if job["stage"] == "ANSA_SURFACE" and job["status"] == "RUNNING" else "BLOCKED"), "evidence": evidence("surface_report.json")},
                            {"name": "Pointwise 体网格", "status": "PASSED" if pointwise_passed else "BLOCKED", "evidence": evidence("pointwise.log")},
                            {"name": "OpenFOAM 网格检查", "status": "PASSED" if mesh_passed else "BLOCKED", "evidence": evidence("checkMesh.log")},
-                           {"name": "OpenFOAM 求解", "status": "PASSED" if solver_passed else ("RUNNING" if job["stage"] == "OPENFOAM_SOLVE" and job["status"] == "RUNNING" else "FAILED" if solver_text else "BLOCKED"), "evidence": evidence("solver.log")},
-                           {"name": "ParaView 后处理", "status": "BLOCKED"},
-                           {"name": "报告", "status": "BLOCKED"}]}
+                           {"name": "OpenFOAM 求解", "status": "WAITING_FOR_REVIEW" if solver_passed and job["status"] != "RUNNING" else ("RUNNING" if job["stage"] == "OPENFOAM_SOLVE" and job["status"] == "RUNNING" else job["status"] if job["stage"] == "OPENFOAM_SOLVE" and job["status"] in {"FAILED", "WAITING_FOR_REVIEW"} else "FAILED" if solver_text else "BLOCKED"), "evidence": evidence("solver.log")},
+                           {"name": "ParaView 后处理", "status": "PASSED" if solver_passed and (version_dir / "paraview_manifest.json").is_file() else "BLOCKED"},
+                           {"name": "报告", "status": "PASSED" if solver_passed and (version_dir / "report.html").is_file() else "BLOCKED"}]}
 
     def inspect(job_id, version):
         directory = data / "workflows" / job_id / f"v{version}"
@@ -222,7 +236,7 @@ def register(app, data, root, config):
             (directory / "stl_quality.json").write_text(json.dumps(quality, indent=2), encoding="utf-8")
             if not quality["passed"]:
                 raise RuntimeError("Exported STL failed closure or degeneracy check")
-            status, error = "PAUSED", "Surface mesh generated; Pointwise volume stage is not yet available"
+            status, error = "PAUSED", "Surface mesh generated; configure and run Pointwise volume mesh"
         except Exception as exc:
             status, error = "NEEDS_MANUAL_REPAIR", str(exc)
         with lock, db() as connection:
@@ -231,17 +245,19 @@ def register(app, data, root, config):
                 connection.execute("UPDATE workflow_jobs SET status=?,stage='ANSA_SURFACE',updated=?,error=? WHERE id=?",
                                    (status, stamp(), error, job_id))
 
-    def mesh_volume(job_id, version):
+    def mesh_volume(job_id, version, radius_ratio=4.0, wall_ratio=0.001, layers=3):
         directory = data / "workflows" / job_id / f"v{version}"
         output = directory / "pointwise"
         output.mkdir(exist_ok=True)
         executable = config["pointwise_glyph_executable"]
         try:
             for script_name, args, log_name, marker in (
-                ("pointwise_aircraft.glf", [str(directory / "surface" / "surface.stl"), str(output)],
+                ("pointwise_aircraft.glf", [str(directory / "surface" / "surface.stl"), str(output), str(radius_ratio), str(wall_ratio), str(layers)],
                  "pointwise.log", "GENERIC_POINTWISE_STATUS=ok"),
                 ("export_openfoam.glf", [str(output / "aircraft_volume.pw"), str(output / "openfoam_export")],
                  "export.log", "OPENFOAM_EXPORT_STATUS=ok")):
+                if script_name == "pointwise_aircraft.glf" and (directory / "manual_pointwise.json").is_file():
+                    continue
                 script = root / "integrations" / "generic_external" / script_name
                 with (output / log_name).open("w", encoding="utf-8") as stream:
                     proc = subprocess.run([executable, str(script), *args], stdout=stream,
@@ -336,6 +352,24 @@ def register(app, data, root, config):
                                (job_id, 1, source["name"], digest, "uploaded", status, None, stamp()))
         if not manual and profile == "general":
             threading.Thread(target=inspect, args=(job_id, 1), daemon=True).start()
+        return details(job_id)
+
+    @router.post("/projects/{project_id}/example-l1")
+    def example_l1(project_id: str):
+        from backend.app import RunIn, create_run
+        source=root / "integrations/l1/inputs/L1/TEST_DATA_sphere_r10mm_v2.ansa"
+        if not source.is_file():
+            raise HTTPException(409,"内置球体工程缺失")
+        job_id=uuid.uuid4().hex
+        directory=data / "workflows" / job_id / "v1"
+        directory.mkdir(parents=True)
+        shutil.copy2(source,directory / "input.ansa")
+        run=create_run(project_id,RunIn(kind="l1_full"))
+        with db() as connection:
+            connection.execute("INSERT INTO workflow_jobs(id,project_id,source_file_id,status,stage,version,created,updated,error,profile,linked_run_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (job_id,project_id,"builtin_l1","RUNNING","文件输入",1,stamp(),stamp(),None,"l1_full",run["id"]))
+            connection.execute("INSERT INTO workflow_versions VALUES(?,?,?,?,?,?,?,?)",
+                (job_id,1,source.name,sha256(source),"builtin_l1","RUNNING",None,stamp()))
         return details(job_id)
 
     @router.get("/projects/{project_id}")
@@ -473,7 +507,7 @@ def register(app, data, root, config):
             if current["version"] != job["version"] or current["status"] not in {"NEEDS_MANUAL_REPAIR", "WAITING_FOR_REVIEW", "PAUSED", "ERROR"}:
                 target.unlink(missing_ok=True)
                 raise HTTPException(409, "Workflow changed while uploading")
-            connection.execute("UPDATE workflow_jobs SET version=?,status='RUNNING',updated=?,error=NULL WHERE id=?",
+            connection.execute("UPDATE workflow_jobs SET version=?,status='RUNNING',stage='ANSA_GEOMETRY',updated=?,error=NULL WHERE id=?",
                                (version, stamp(), job_id))
             connection.execute("INSERT INTO workflow_versions VALUES(?,?,?,?,?,?,?,?)",
                                (job_id, version, name, digest, "manual_repair", "RUNNING", None, stamp()))
@@ -483,7 +517,7 @@ def register(app, data, root, config):
     @router.post("/{job_id}/approve")
     def approve(job_id: str, reviewer: str, note: str = ""):
         job = job_row(job_id)
-        if job["status"] != "WAITING_FOR_REVIEW":
+        if job["status"] != "WAITING_FOR_REVIEW" or job["stage"] != "ANSA_GEOMETRY":
             raise HTTPException(409, "ANSA geometry verification has not passed")
         if not reviewer.strip():
             raise HTTPException(400, "Reviewer name is required")
@@ -557,7 +591,7 @@ def register(app, data, root, config):
         return FileResponse(path, filename=name)
 
     @router.post("/{job_id}/volume-mesh")
-    def start_volume(job_id: str):
+    def start_volume(job_id: str, radius_ratio: float = Query(4.0, ge=2, le=30), wall_ratio: float = Query(0.001, gt=0, le=0.1), layers: int = Query(3, ge=1, le=50)):
         job = job_row(job_id)
         current = details(job_id)
         if job["profile"] != "general" or job["status"] not in {"PASSED", "PAUSED"} or current["stages"][2]["status"] != "PASSED":
@@ -568,7 +602,7 @@ def register(app, data, root, config):
         with lock, db() as connection:
             connection.execute("UPDATE workflow_jobs SET status='RUNNING',stage='POINTWISE_VOLUME',updated=?,error=NULL WHERE id=?",
                                (stamp(), job_id))
-        threading.Thread(target=mesh_volume, args=(job_id, job["version"]), daemon=True).start()
+        threading.Thread(target=mesh_volume, args=(job_id, job["version"], radius_ratio, wall_ratio, layers), daemon=True).start()
         return details(job_id)
 
     @router.get("/{job_id}/versions/{version}/file")
@@ -598,6 +632,19 @@ def register(app, data, root, config):
         path = data / "workflows" / job_id / f"v{version}" / "ansa.log"
         return {"log": path.read_text(encoding="utf-8", errors="replace")[-50000:] if path.is_file() else ""}
 
+    @router.get("/{job_id}/report")
+    def workflow_report(job_id: str):
+        job = job_row(job_id)
+        directory = data / "workflows" / job_id / f"v{job['version']}"
+        path = directory / "report.html"
+        if not path.is_file() or not (directory / "result.json").is_file():
+            raise HTTPException(409, "当前版本尚无真实计算报告")
+        return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'"})
+
+    from backend.pointwise_handoff import register_handoff
+    register_handoff(router, data, config, job_row, details, db, lock, stamp, sha256, mesh_volume)
+    from backend.external_setup import register_setup
+    register_setup(router, data, root, job_row, details, db, lock, stamp, sha256)
     from backend.recovery import register_recovery
     register_recovery(router, data, config, job_row, details, db, lock, stamp, sha256)
     app.include_router(router)

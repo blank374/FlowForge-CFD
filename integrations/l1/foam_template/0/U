@@ -1,0 +1,4 @@
+FoamFile { format ascii; class volVectorField; object U; }
+dimensions [0 1 -1 0 0 0 0];
+internalField uniform (0.075 0 0);
+boundaryField { L1_WALL { type noSlip; } L1_FARFIELD { type freestreamVelocity; freestreamValue uniform (0.075 0 0); } }

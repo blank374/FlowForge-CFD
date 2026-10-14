@@ -1,0 +1,32 @@
+{
+  "stl": "F:\\Auto\\FlowForge-CFD\\integrations\\demo_aircraft\\demo_aircraft.stl",
+  "facets": 20448,
+  "unique_vertices": 10226,
+  "unique_edges": 30672,
+  "connected_components": 1,
+  "boundary_edges": 0,
+  "boundary_edges_on_y_zero": 0,
+  "boundary_edges_away_from_y_zero": 0,
+  "off_symmetry_components": [],
+  "nonmanifold_edges": 0,
+  "degenerate_facets": 0,
+  "bounding_box_min_mm": [
+    -12.0,
+    -16.269025802612305,
+    -2.200000047683716
+  ],
+  "bounding_box_max_mm": [
+    12.0,
+    16.269025802612305,
+    2.200000047683716
+  ],
+  "surface_area_mm2": 594.918332148896,
+  "radius_center_mm": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "radius_min_mm": 2.200000047683716,
+  "radius_mean_mm": 3.1617406378609383,
+  "radius_max_mm": 16.29893988989327
+}

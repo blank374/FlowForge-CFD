@@ -1,0 +1,13 @@
+{
+  "status": "ok", 
+  "cons_before": 24, 
+  "source": "F:\\Auto\\FlowForge-CFD\\integrations\\demo_aircraft\\demo_aircraft_test.igs", 
+  "intersections_after": 0, 
+  "faces_after": 6, 
+  "cons_after": 12, 
+  "topo_return": "1", 
+  "units": "millimeter", 
+  "faces_before": 6, 
+  "red_cons_after": 0, 
+  "red_cons_before": 24
+}

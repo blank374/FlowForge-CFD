@@ -1,0 +1,10 @@
+{
+  "faces": 0, 
+  "note": "Mesh-only ANSA project; no CAD FACE entities", 
+  "source": "F:\\Auto\\FlowForge-CFD\\integrations\\demo_aircraft\\demo_aircraft_v3.stl", 
+  "target": "F:\\Auto\\FlowForge-CFD\\integrations\\demo_aircraft\\demo_aircraft_v3.ansa", 
+  "save_return": 0, 
+  "shells": 20448, 
+  "status": "saved", 
+  "import_return": 0
+}

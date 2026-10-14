@@ -1,0 +1,108 @@
+------------------------------------------------------------
+                         System Info                        
+ System name:		Windows
+ System version:	10
+ Window Manager:	Aero
+ Kernel version:	10.0
+ Build number:		19045
+ Architecture name:	x86_64
+ System type:		Windows
+ Architecture type:	X86_64
+ Total Number of Cores:	16
+------------------------------------------------------------
+                           A N S A                          
+ version:  20.1.6, compiled: May 13 2021, 14:51:02
+ built:    64-bit, sn: 0fd51f109f6a
+ platform: Windows 8664 6 2  9200 little-endian
+ company:  
+
+------------------------------------------------------------
+Reading file C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/ANSA.defaults
+Reading file C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/translators.defaults
+Script editor help file : C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/script_help.xml
+Python editor help file : C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/python_help.xml
+------------------------------------------------------------
+NOTICE: script [C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/ANSA_TRANSL] not found
+NOTICE: script [C:/Users/Lenovo1/.BETA/ANSA/version_20.1.6/ANSA_TRANSL] not found
+NOTICE: script [F:/Auto/FlowForge-CFD/ANSA_TRANSL] not found
+NOTICE: script [C:/Users/Lenovo1/AppData/Local/Apps/BETA_CAE_Systems/ansa_v20.1.6/config/ANSA_TRANSL.py] not found
+NOTICE: script [C:/Users/Lenovo1/.BETA/ANSA/version_20.1.6/ANSA_TRANSL.py] not found
+NOTICE: script [F:/Auto/FlowForge-CFD/ANSA_TRANSL.py] not found
+Reading script from :F:/Auto/FlowForge-CFD/integrations/demo_aircraft/validate_iges.py
+Generating code...
+Code generation completed.
+  0% [                                                  ]
+  1% [                                                  ]
+  2% [#                                                 ]
+  3% [#                                                 ]
+  4% [##                                                ]
+  5% [##                                                ]
+  6% [###                                               ]
+  7% [###                                               ]
+  8% [####                                              ]
+  9% [####                                              ]
+ 10% [#####                                             ]
+ 11% [#####                                             ]
+ 12% [######                                            ]
+ 13% [######                                            ]
+ 14% [#######                                           ]
+ 15% [#######                                           ]
+ 16% [########                                          ]
+ 17% [########                                          ]
+ 18% [#########                                         ]
+ 19% [#########                                         ]
+ 20% [##########                                        ]
+ 21% [##########                                        ]
+ 22% [###########                                       ]
+ 23% [###########                                       ]
+ 24% [############                                      ]
+ 25% [############                                      ]
+ 26% [#############                                     ]
+ 27% [#############                                     ]
+ 28% [##############                                    ]
+ 29% [##############                                    ]
+ 30% [###############                                   ]
+ 31% [###############                                   ]
+ 32% [################                                  ]
+ 33% [################                                  ]
+ 44% [######################                            ]
+ 55% [###########################                       ]
+ 66% [#################################                 ]
+ 77% [######################################            ]
+ 88% [############################################      ]
+ 99% [################################################# ]
+100% [##################################################]
+
+DEMO_IGES_VALIDATION=ok
+ Reading file : 
+F:/Auto/FlowForge-CFD/integrations/demo_aircraft/demo_aircraft_test.igs
+Reading file. Please Wait. 
+************************************************************************
+ IGES VERSION                     : 5.3
+ DRAFTING STANDARD                : ISO
+ SYSTEM ID                        : ANSA
+ PREPROCESSOR VERSION             : 20.1.6
+ AUTHOR"S NAME                    : unspecified
+ AUTHORS"S ORGANIZATION           : unspecified
+ FILE NAME                        : demo_aircraft.igs
+ PRODUCT ID. FROM SENDING SYSTEM  : 
+ PRODUCT ID. FOR RECEIVING SYSTEM : 
+ DATE & TIME                      : 20261013.092514
+ UNITS                            : MM
+ SCALE                            :     1.0000
+ RESOLUTION                       :  0.0002000
+ MAXIMUM COORDINATE               : unspecified
+************************************************************************
+* IGES File info
+  Surfaces :6 Faces  :6
+  Cons     :24 Curves :0
+ 
+  CAD input topology options : 
+  Perform topology           : No
+  Topo between layers        : No
+  Topo between parts         : No
+  Respect file topology      : Yes
+  Geometry clean up          : No
+  Read construction surfaces : Yes
+  Create sets                : No
+  Read free geometry                : Yes

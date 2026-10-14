@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,13 +40,18 @@ def register(app, data, root, config):
         "aircraft_volume.cgns": "pointwise/aircraft_volume.cgns",
         "pointwise.log": "pointwise/pointwise.log", "export.log": "pointwise/export.log",
         "checkMesh.log": "checkMesh.log", "solver.log": "solver.log",
-        "units.json": "openfoam_case/units.json",
+        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json",
     }
 
+    @contextmanager
     def db():
         connection = sqlite3.connect(db_path, timeout=30)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     with db() as connection:
         connection.executescript("""
@@ -151,7 +157,7 @@ def register(app, data, root, config):
                            {"name": "ANSA 表面网格", "status": "PASSED" if surface_passed else ("RUNNING" if job["stage"] == "ANSA_SURFACE" and job["status"] == "RUNNING" else "BLOCKED"), "evidence": evidence("surface_report.json")},
                            {"name": "Pointwise 体网格", "status": "PASSED" if pointwise_passed else "BLOCKED", "evidence": evidence("pointwise.log")},
                            {"name": "OpenFOAM 网格检查", "status": "PASSED" if mesh_passed else "BLOCKED", "evidence": evidence("checkMesh.log")},
-                           {"name": "OpenFOAM 求解", "status": "PASSED" if solver_passed else ("FAILED" if solver_text else "BLOCKED"), "evidence": evidence("solver.log")},
+                           {"name": "OpenFOAM 求解", "status": "PASSED" if solver_passed else ("RUNNING" if job["stage"] == "OPENFOAM_SOLVE" and job["status"] == "RUNNING" else "FAILED" if solver_text else "BLOCKED"), "evidence": evidence("solver.log")},
                            {"name": "ParaView 后处理", "status": "BLOCKED"},
                            {"name": "报告", "status": "BLOCKED"}]}
 
@@ -592,4 +598,6 @@ def register(app, data, root, config):
         path = data / "workflows" / job_id / f"v{version}" / "ansa.log"
         return {"log": path.read_text(encoding="utf-8", errors="replace")[-50000:] if path.is_file() else ""}
 
+    from backend.recovery import register_recovery
+    register_recovery(router, data, config, job_row, details, db, lock, stamp, sha256)
     app.include_router(router)

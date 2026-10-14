@@ -7,12 +7,13 @@ import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 type FileItem = {id:string, name:string, size:number};
 type Preview = {status:'ready'|'processing'|'error', url?:string, error?:string};
 
-export default function CadViewer({file}:{file:FileItem|null}) {
+export default function CadViewer({file, sourceUrl}:{file:FileItem|null; sourceUrl?:string}) {
   const host = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<Preview|null>(null);
   useEffect(() => {
     setPreview(null);
     if (!file) return;
+    if (sourceUrl) {setPreview({status:'ready',url:sourceUrl});return}
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     async function check() {
@@ -29,7 +30,7 @@ export default function CadViewer({file}:{file:FileItem|null}) {
     }
     check();
     return () => {stopped = true; clearTimeout(timer)};
-  }, [file?.id]);
+  }, [file?.id, sourceUrl]);
 
   useEffect(() => {
     if (!file || preview?.status !== 'ready' || !preview.url || !host.current) return;

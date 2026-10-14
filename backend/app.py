@@ -396,6 +396,10 @@ def run_l1(rid: str, directory: Path, log: Path, solve: bool, cad_input: Path | 
         code = run_process(rid, command, out, 600)
     summary_path = directory / "run_summary.json"
     if code or not summary_path.is_file():
+        if summary_path.is_file():
+            failed_summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+            if failed_summary.get("error"):
+                raise RuntimeError(str(failed_summary["error"]) + " See run_summary.json")
         raise RuntimeError(f"ANSA/Pointwise run failed ({code}); inspect process.log")
     summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
     if summary.get("status") != "passed" or not summary.get("geometry", {}).get("sphere_gate") or summary.get("volume_quality", {}).get("volume_cells", 0) < 100:

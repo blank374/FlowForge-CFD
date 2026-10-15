@@ -67,6 +67,15 @@ def register_recovery(router, data, config, job_row, details, db, lock, stamp, s
             error='求解进程结束；需审核残差、质量与物理适用性。若有报告，报告仅记录瞬态测试结果。'
         except Exception as exc:
             error=str(exc)
+        if not (directory/'report.docx').is_file():
+            try:
+                from backend.word_report import write_word_report, read
+                setup=read(directory,'external_setup.json')
+                write_word_report(directory,{'input_model':job_id,'physics':setup.get('settings',{}),
+                    'scope':error or '求解执行记录，标准验收未完成'},status=status)
+            except Exception as report_error:
+                (directory/'word_report_error.log').write_text(str(report_error),encoding='utf-8')
+                error=(error or '')+'；Word 报告生成失败：'+str(report_error)
         with lock, db() as c:
             c.execute('UPDATE workflow_jobs SET status=?,error=?,updated=? WHERE id=? AND version=?',(status,error,stamp(),job_id,version))
             c.execute('UPDATE workflow_versions SET status=? WHERE job_id=? AND version=?',(status,job_id,version))
@@ -119,7 +128,7 @@ def register_recovery(router, data, config, job_row, details, db, lock, stamp, s
             target.mkdir()  # Never overwrite an old attempt.
             for path in old.iterdir():
                 if path.name in {'openfoam_case','solver.log','checkpoint.json','checkMesh.log','manual_edit.json',
-                                 'result.json','report.html','report.md','U.png','p.png','residuals.png',
+                                 'result.json','report.html','report.docx','report.md','U.png','p.png','residuals.png',
                                  'paraview_manifest.json','external_flow.pvsm','slice_centers.csv',
                                  'openfoam_case.zip','force_coefficients.csv'} or path.name.startswith('postprocess_'): continue
                 if path.is_dir(): shutil.copytree(path,target/path.name)

@@ -46,8 +46,8 @@ def register(app, data, root, config):
         "aircraft_volume.cgns": "pointwise/aircraft_volume.cgns",
         "pointwise.log": "pointwise/pointwise.log", "export.log": "pointwise/export.log",
         "checkMesh.log": "checkMesh.log", "checkMesh_mm.log": "checkMesh_mm.log", "solver.log": "solver.log",
-        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json", "external_setup.json": "external_setup.json", "manual_pointwise.json": "manual_pointwise.json", "surface_settings.json": "surface_settings.json",
-        **{name: name for name in ("report.html", "result.json", "U.png", "p.png", "residuals.png", "external_flow.pvsm", "slice_centers.csv", "openfoam_case.zip", "postprocess_0.log", "postprocess_1.log", "postprocess_2.log")},
+        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json", "external_setup.json": "external_setup.json", "manual_pointwise.json": "manual_pointwise.json", "surface_settings.json": "surface_settings.json", "volume_settings.json": "volume_settings.json",
+        **{name: name for name in ("report.html", "report.docx", "result.json", "U.png", "p.png", "residuals.png", "external_flow.pvsm", "slice_centers.csv", "openfoam_case.zip", "postprocess_0.log", "postprocess_1.log", "postprocess_2.log")},
     }
 
     @contextmanager
@@ -262,7 +262,33 @@ def register(app, data, root, config):
                 connection.execute("UPDATE workflow_jobs SET status=?,stage='ANSA_SURFACE',updated=?,error=? WHERE id=?",
                                    (status, stamp(), error, job_id))
 
-    def mesh_volume(job_id, version, radius_ratio=4.0, wall_ratio=0.001, layers=3):
+    def volume_version(job_id, parent_version, settings):
+        with lock:
+            job=job_row(job_id)
+            if job['version'] != parent_version:
+                raise RuntimeError('任务版本已变化，停止自动适配')
+            old=data/'workflows'/job_id/f'v{parent_version}'
+            source=next(old.glob('input.*'))
+            with db() as connection:
+                previous=connection.execute('SELECT * FROM workflow_versions WHERE job_id=? AND version=?',(job_id,parent_version)).fetchone()
+            if sha256(source)!=previous['sha256']:
+                raise RuntimeError('输入已变化，必须重新检查几何')
+            version=parent_version+1
+            target=old.parent/f'v{version}'
+            target.mkdir(exist_ok=False)
+            for name in (source.name,'review.ansa','geometry_report.json','ansa.log','surface','surface_settings.json'):
+                item=old/name
+                if item.is_dir(): shutil.copytree(item,target/name)
+                elif item.is_file(): shutil.copy2(item,target/name)
+            (target/'volume_settings.json').write_text(json.dumps({**settings,'parent_version':parent_version,'source_sha256':previous['sha256'],'created':stamp()},indent=2),encoding='utf-8')
+            with db() as connection:
+                connection.execute('INSERT INTO workflow_versions VALUES(?,?,?,?,?,?,?,?)',(job_id,version,source.name,previous['sha256'],'mesh_quality_retry','RUNNING',previous['report'],stamp()))
+                connection.execute("UPDATE workflow_versions SET status='FAILED' WHERE job_id=? AND version=?",(job_id,parent_version))
+                connection.execute('INSERT INTO workflow_reviews SELECT job_id,?,decision,reviewer,note,created FROM workflow_reviews WHERE job_id=? AND version=?',(version,job_id,parent_version))
+                connection.execute("UPDATE workflow_jobs SET version=?,status='RUNNING',stage='POINTWISE_VOLUME',updated=?,error=NULL WHERE id=?",(version,stamp(),job_id))
+            return version
+
+    def mesh_volume(job_id, version, radius_ratio=4.0, wall_ratio=0.001, layers=3, auto_quality=False, attempt=0):
         directory = data / "workflows" / job_id / f"v{version}"
         output = directory / "pointwise"
         output.mkdir(exist_ok=True)
@@ -331,11 +357,23 @@ def register(app, data, root, config):
             status, error = "ERROR", str(exc)
         except Exception as exc:
             status, error = "NEEDS_MANUAL_REPAIR", str(exc)
+            failure_log=directory/'checkMesh_mm.log'
+            if auto_quality and not (directory/'manual_pointwise.json').is_file() and failure_log.is_file():
+                from backend.mesh_adaptation import next_spacing_ratio
+                candidate=next_spacing_ratio(failure_log.read_text(errors='replace'),wall_ratio,attempt)
+                if candidate is not None:
+                    try:
+                        new_version=volume_version(job_id,version,{'radius_ratio':radius_ratio,'wall_ratio':candidate,'layers':layers,'auto_quality':True,'attempt':attempt+1,'reason':'真实 checkMesh 高偏斜面失败，尝试另一个壁面间距；阈值不变'})
+                    except Exception as retry_error:
+                        error += '; automatic retry stopped: '+str(retry_error)
+                    else:
+                        return mesh_volume(job_id,new_version,radius_ratio,candidate,layers,True,attempt+1)
         with lock, db() as connection:
             current = connection.execute("SELECT version FROM workflow_jobs WHERE id=?", (job_id,)).fetchone()
             if current and current["version"] == version:
                 connection.execute("UPDATE workflow_jobs SET status=?,stage='POINTWISE_VOLUME',updated=?,error=? WHERE id=?",
                                    (status, stamp(), error, job_id))
+                connection.execute('UPDATE workflow_versions SET status=? WHERE job_id=? AND version=?',(status,job_id,version))
 
     @router.post("/projects/{project_id}")
     def create(project_id: str, file_id: str, manual: bool = False, profile: str = "general"):
@@ -643,7 +681,7 @@ def register(app, data, root, config):
         return FileResponse(path, filename=name)
 
     @router.post("/{job_id}/volume-mesh")
-    def start_volume(job_id: str, radius_ratio: float = Query(4.0, ge=2, le=30), wall_ratio: float = Query(0.001, gt=0, le=0.1), layers: int = Query(3, ge=1, le=50)):
+    def start_volume(job_id: str, radius_ratio: float = Query(4.0, ge=2, le=30), wall_ratio: float = Query(0.001, gt=0, le=0.1), layers: int = Query(3, ge=1, le=50), auto_quality: bool = True):
         job = job_row(job_id)
         current = details(job_id)
         if job["profile"] != "general" or job["status"] not in {"PASSED", "PAUSED"} or current["stages"][2]["status"] != "PASSED":
@@ -652,9 +690,25 @@ def register(app, data, root, config):
         if directory.exists() and any(directory.iterdir()):
             raise HTTPException(409, "Pointwise attempt already exists; preserve its evidence before retrying")
         with lock, db() as connection:
+            (directory.parent/'volume_settings.json').write_text(json.dumps({'radius_ratio':radius_ratio,'wall_ratio':wall_ratio,'layers':layers,'auto_quality':auto_quality,'attempt':0,'created':stamp()},indent=2),encoding='utf-8')
             connection.execute("UPDATE workflow_jobs SET status='RUNNING',stage='POINTWISE_VOLUME',updated=?,error=NULL WHERE id=?",
                                (stamp(), job_id))
-        threading.Thread(target=mesh_volume, args=(job_id, job["version"], radius_ratio, wall_ratio, layers), daemon=True).start()
+        threading.Thread(target=mesh_volume, args=(job_id, job["version"], radius_ratio, wall_ratio, layers, auto_quality), daemon=True).start()
+        return details(job_id)
+
+    @router.post('/{job_id}/retry-volume-auto')
+    def retry_volume_auto(job_id: str):
+        job=job_row(job_id)
+        if job['profile']!='general' or job['stage']!='POINTWISE_VOLUME' or job['status'] not in {'NEEDS_MANUAL_REPAIR','ERROR'}:
+            raise HTTPException(409,'仅可对失败的体网格启动新适配轮次')
+        old=data/'workflows'/job_id/f"v{job['version']}"
+        failure=old/'checkMesh_mm.log'
+        from backend.mesh_adaptation import next_spacing_ratio
+        if not failure.is_file() or next_spacing_ratio(failure.read_text(errors='replace'),.001,0) is None:
+            raise HTTPException(409,'当前失败类型不适合自动网格适配，请先检查日志')
+        settings={'radius_ratio':4.0,'wall_ratio':.001,'layers':3,'auto_quality':True,'attempt':0}
+        version=volume_version(job_id,job['version'],settings)
+        threading.Thread(target=mesh_volume,args=(job_id,version,4.0,.001,3,True),daemon=True).start()
         return details(job_id)
 
     @router.get("/{job_id}/versions/{version}/file")

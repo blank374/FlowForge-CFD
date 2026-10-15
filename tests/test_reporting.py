@@ -10,3 +10,20 @@ def test_report_requires_real_images_and_escapes_input(tmp_path):
     content=(tmp_path/'report.html').read_text(encoding='utf-8')
     assert '<script>bad' not in content and '&lt;script&gt;' in content
     assert content.count('data:image/png;base64,')==3
+    from docx import Document
+    document=Document(tmp_path/'report.docx')
+    text='\n'.join(p.text for p in document.paragraphs)
+    assert '标准工况验收' in text
+    assert 'DPW' in text and '未完成' in text
+    assert len(document.inline_shapes)==3
+    assert all('<script>bad' not in p.text for p in document.paragraphs if 'input_model' in p.text)
+
+
+def test_word_report_missing_evidence_does_not_invent_results(tmp_path):
+    from backend.word_report import write_word_report
+    from docx import Document
+    path=write_word_report(tmp_path,{'input_model':'未运行模型','physics':{}},status='失败记录')
+    document=Document(path)
+    text='\n'.join(p.text for p in document.paragraphs)
+    assert '不足以认定' in text and '表面与空间流线：未完成' in text
+    assert len(document.inline_shapes)==0

@@ -57,7 +57,7 @@ def register_setup(router,data,root,job_row,details,db,lock,stamp,sha):
                 # Retain time zero only; previous fields cannot become new results.
                 for path in (candidate/'case').iterdir():
                     if path.is_dir() and re.fullmatch(r'[0-9.eE+-]+',path.name) and path.name!='0':shutil.rmtree(path)
-                shutil.copytree(old,target,ignore=shutil.ignore_patterns('openfoam_case','solver.log','checkpoint.json','manual_edit.json','report.html','report.md','result.json','U.png','p.png','residuals.png','paraview_manifest.json','external_flow.pvsm','slice_centers.csv','openfoam_case.zip','force_coefficients.csv','postprocess_*'))
+                shutil.copytree(old,target,ignore=shutil.ignore_patterns('openfoam_case','solver.log','checkpoint.json','manual_edit.json','report.html','report.docx','report.md','result.json','U.png','p.png','residuals.png','paraview_manifest.json','external_flow.pvsm','slice_centers.csv','openfoam_case.zip','force_coefficients.csv','postprocess_*'))
                 shutil.copytree(candidate/'case',target/'openfoam_case')
             manifest={'scenario':'incompressible_external','model':'laminar','settings':params,'parent_version':job['version'],'created':stamp(),'parameter_sha256':hashlib.sha256(json.dumps(params,sort_keys=True).encode()).hexdigest()}
             (target/'external_setup.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')

@@ -22,3 +22,5 @@ def write_report(directory, result):
 <p>速度异常值警告：{esc(result.get('velocity_outlier_warning'))}。请结合网格、边界与时间尺度检查适用性。未实际计算的力系数不在报告中展示。</p>
 {''.join(figures)}<h2>真实数据与追溯</h2><p>运行编号：{esc(directory.name)}。原始记录与工程请从工作台下载 solver.log、checkMesh.log、配置与检查点记录及 openfoam_case.zip。</p><pre>{esc(json.dumps(result,ensure_ascii=False,indent=2))}</pre></html>'''
     (directory/'report.html').write_text(document,encoding='utf-8')
+    from backend.word_report import write_word_report
+    write_word_report(directory, result)

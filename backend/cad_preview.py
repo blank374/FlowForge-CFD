@@ -12,6 +12,8 @@ def main():
     report = os.environ["FLOWFORGE_PREVIEW_REPORT"]
     result = {"status": "error", "source": source}
     try:
+        if not os.path.isfile(source):
+            raise RuntimeError("原始上传文件不存在，请重新上传模型；这不是曲面质量检查失败")
         base.Open(source)
         deck = constants.NASTRAN
         base.SetCurrentDeck(deck)
@@ -36,5 +38,4 @@ def main():
     print("FLOWFORGE_PREVIEW_STATUS=" + result["status"])
 
 
-if __name__ == "__main__":
-    main()
+# ANSA is invoked with load_script followed by an explicit main() call.

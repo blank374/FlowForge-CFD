@@ -38,6 +38,9 @@ def test_versioned_artifact_and_failed_solver_status():
             assert details['stages'][4]['status'] == 'FAILED'
             assert details['stages'][4]['evidence'].endswith('/checkMesh_mm.log')
             assert client.get(details['stages'][4]['evidence']).status_code == 200
+            (version/'report.docx').write_bytes(b'word artifact fixture')
+            response=client.get(f'/api/workflows/{job_id}/artifacts/report.docx')
+            assert response.status_code==200 and response.content==b'word artifact fixture'
             url = details["versions"][0]["artifacts"][0]["url"]
             assert client.get(url).status_code == 200
             assert client.get(f"/api/workflows/{job_id}/artifacts/unknown").status_code == 404

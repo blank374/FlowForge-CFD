@@ -245,6 +245,8 @@ def cad_preview_status(fid: str):
     if not found:
         raise HTTPException(404, "File not found")
     source = Path(found[0]["path"])
+    if not source.is_file():
+        return {"status": "error", "error": "原始上传文件不存在，请重新上传模型；已有文件记录不代表磁盘文件仍在。"}
     suffix = source.suffix.lower()
     if suffix in {".stl", ".obj"}:
         return {"status": "ready", "url": f"/api/files/{fid}"}
@@ -375,6 +377,16 @@ def execute(rid: str, kind: str):
         status, error = "failed", str(exc)
         with log.open("a", encoding="utf-8") as out:
             out.write(f"\nERROR: {error}\n")
+    if not (directory / "report.docx").is_file():
+        try:
+            from backend.word_report import write_word_report, read
+            record = read(directory, 'result.json')
+            record.setdefault('input_model', rid)
+            record.setdefault('scope', error or '计算执行记录，标准验收未完成')
+            write_word_report(directory, record, status=status)
+        except Exception as report_error:
+            (directory / 'word_report_error.log').write_text(str(report_error), encoding='utf-8')
+            error = (error or '') + '；Word 报告生成失败：' + str(report_error)
     with run_lock:
         if run_cancel[rid].is_set() and status != "cancelled":
             status, error = "cancelled", "Task cancelled"

@@ -20,7 +20,7 @@ def test_checkpoint_reuses_mesh_and_preserves_failure(tmp_path, monkeypatch):
         (case/'system/controlDict').write_text('deltaT 0.0001;\nendTime 0.002;')
         (base/'checkMesh.log').write_text('Mesh OK.')
         (base/'solver.log').write_text('Courant Number mean: 1 max: 200001\n')
-        old_results = ['result.json','report.html','U.png','paraview_manifest.json','force_coefficients.csv','postprocess_0.log','openfoam_case.zip']
+        old_results = ['result.json','report.html','report.docx','U.png','paraview_manifest.json','force_coefficients.csv','postprocess_0.log','openfoam_case.zip']
         for name in old_results:
             (base/name).write_text('old result')
         assert client.post(f'/api/workflows/{jid}/retry-solver',json={'delta_t':-1}).status_code==422

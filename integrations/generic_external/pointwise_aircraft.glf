@@ -164,7 +164,7 @@ if {[catch {
     puts "PYRAMID_COUNT=[pw::Grid getElementCount Pyramid]"
     puts "HEX_COUNT=[pw::Grid getElementCount Hex]"
     puts "BOUNDARY_LAYER_TYPE=GeometricGrowth"
-    puts "BOUNDARY_LAYER_INITIAL_SPACING=2.0"
+    puts "BOUNDARY_LAYER_INITIAL_SPACING=$wallSpacing"
 
     set jacobianExam [pw::Examine create BlockJacobian]
     $jacobianExam addEntity $blocks

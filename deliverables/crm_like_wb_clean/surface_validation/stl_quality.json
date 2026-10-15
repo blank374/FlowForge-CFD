@@ -1,0 +1,17 @@
+{
+  "triangles": 10130,
+  "bbox_min_mm": [
+    -750.0,
+    -581.4166259765625,
+    -75.0
+  ],
+  "bbox_max_mm": [
+    750.0,
+    581.4166259765625,
+    75.0
+  ],
+  "degenerate_triangles": 0,
+  "open_edges": 0,
+  "nonmanifold_edges": 0,
+  "passed": true
+}

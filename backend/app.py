@@ -114,7 +114,7 @@ class RunIn(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "environment": environment()}
+    return {"status": "ok", "api_revision": "workflow-v1-handoff", "environment": environment()}
 
 
 def environment():

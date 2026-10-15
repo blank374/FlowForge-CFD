@@ -1,0 +1,21 @@
+{
+  "status": "meshed", 
+  "shell": 5424, 
+  "cad_cons": 768, 
+  "apply_length_return": "0", 
+  "nonmanifold_cons": 0, 
+  "tria": 0, 
+  "source": "F:\\Auto\\FlowForge-CFD\\deliverables\\crm_like_wb_clean\\crm_like_wb_clean.ansa", 
+  "mesh_return": "0", 
+  "cad_faces": 384, 
+  "open_cons": 0, 
+  "target_length_return": "1", 
+  "stl_return": 0, 
+  "quad": 0, 
+  "elapsed_seconds": 0.66, 
+  "intersection_region_count": 0, 
+  "intersection_regions": null, 
+  "save_return": 0, 
+  "target_length_mm": 12.0, 
+  "unit": "millimeter"
+}

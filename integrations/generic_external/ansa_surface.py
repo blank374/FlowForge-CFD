@@ -14,17 +14,25 @@ def main():
     length = float(os.environ.get("FLOWFORGE_SURFACE_LENGTH_MM", "12"))
     result = {"status": "error", "source": source, "target_length_mm": length}
     started = time.time()
+    def progress(stage):
+        elapsed = round(time.time() - started, 2)
+        with open(os.path.join(output, "progress.json"), "w") as stream:
+            json.dump({"stage": stage, "elapsed_seconds": elapsed,
+                       "target_length_mm": length}, stream)
+        print("FLOWFORGE_SURFACE_STAGE=%s elapsed=%s length_mm=%s" % (stage, elapsed, length), flush=True)
     try:
         if not 0.1 <= length <= 100:
             raise ValueError("Surface length outside supported millimetre range")
         if any(os.path.exists(os.path.join(output, name)) for name in ("surface.ansa", "surface.stl")):
             raise RuntimeError("Output already exists; use a fresh stage directory")
+        progress("IMPORT_GEOMETRY")
         base.Open(source)
         deck = constants.FLUENT
         base.SetCurrentDeck(deck)
         result["unit"] = str(base.GetLengthUnits())
         if result["unit"].lower() != "millimeter":
             raise RuntimeError("Approved CAD must declare millimetres")
+        progress("CHECK_TOPOLOGY")
         faces = base.CollectEntities(deck, None, "FACE") or []
         cons = base.CollectEntities(deck, None, "CONS") or []
         result["cad_faces"] = len(faces)
@@ -35,14 +43,17 @@ def main():
             raise RuntimeError("CAD surface is not closed and manifold")
         base.All()
         base.SetANSAdefaultsValues({"perimeter_length": length})
+        progress("APPLY_TARGET_LENGTH")
         result["apply_length_return"] = repr(mesh.ApplyNewLengthToMacros(str(length), cons))
         result["target_length_return"] = repr(mesh.SetMeshParamTargetLength("absolute", length))
+        progress("GENERATE_SURFACE_MESH")
         result["mesh_return"] = repr(mesh.CreateCfdMesh())
         result["tria"] = len(base.CollectEntities(deck, None, "TRIA") or [])
         result["quad"] = len(base.CollectEntities(deck, None, "QUAD") or [])
         result["shell"] = len(base.CollectEntities(deck, None, "SHELL") or [])
         if result["tria"] + result["quad"] + result["shell"] < 1000:
-            raise RuntimeError("No usable surface mesh was generated")
+            raise RuntimeError("Surface density gate failed: target length %s mm; only %s shell elements; current minimum is 1000. Reduce target length and retry in a new version." % (length, result["shell"]))
+        progress("CHECK_INTERSECTIONS")
         result["intersection_regions"] = base.CheckIntersections(False, False, True)
         if result["intersection_regions"] is not None:
             result["intersection_region_count"] = len(result["intersection_regions"])
@@ -52,6 +63,7 @@ def main():
             result["intersection_region_count"] = 0
         project = os.path.join(output, "surface.ansa")
         stl = os.path.join(output, "surface.stl")
+        progress("SAVE_ARTIFACTS")
         result["save_return"] = base.SaveAs(project)
         result["stl_return"] = base.OutputStereoLithography(filename=stl, mode="all", format="binary")
         if result["save_return"] != 0 or result["stl_return"] != 0:
@@ -63,6 +75,7 @@ def main():
     except Exception:
         result["error"] = traceback.format_exc()
     result["elapsed_seconds"] = round(time.time() - started, 2)
+    progress("COMPLETED" if result["status"] == "meshed" else "FAILED")
     with open(report_path, "w") as stream:
         json.dump(result, stream, indent=2, default=str)
     print("FLOWFORGE_SURFACE_STATUS=" + result["status"])

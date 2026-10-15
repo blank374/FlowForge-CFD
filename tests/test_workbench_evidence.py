@@ -33,6 +33,11 @@ def test_versioned_artifact_and_failed_solver_status():
             details = client.get(f"/api/workflows/{job_id}").json()
             assert details["stages"][5]["status"] == "FAILED"
             assert details["metrics"]["maximum_courant"] == 100
+            (version / "checkMesh_mm.log").write_text('18 highly skew faces\nFailed 1 mesh checks.\nEnd\n')
+            details = client.get(f"/api/workflows/{job_id}").json()
+            assert details['stages'][4]['status'] == 'FAILED'
+            assert details['stages'][4]['evidence'].endswith('/checkMesh_mm.log')
+            assert client.get(details['stages'][4]['evidence']).status_code == 200
             url = details["versions"][0]["artifacts"][0]["url"]
             assert client.get(url).status_code == 200
             assert client.get(f"/api/workflows/{job_id}/artifacts/unknown").status_code == 404

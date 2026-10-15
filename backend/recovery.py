@@ -118,7 +118,10 @@ def register_recovery(router, data, config, job_row, details, db, lock, stamp, s
                 raise HTTPException(409,'下一版本目录已存在，请检查上次未完成的检查点；不会覆盖')
             target.mkdir()  # Never overwrite an old attempt.
             for path in old.iterdir():
-                if path.name in {'openfoam_case','solver.log','checkpoint.json','checkMesh.log','manual_edit.json'}: continue
+                if path.name in {'openfoam_case','solver.log','checkpoint.json','checkMesh.log','manual_edit.json',
+                                 'result.json','report.html','report.md','U.png','p.png','residuals.png',
+                                 'paraview_manifest.json','external_flow.pvsm','slice_centers.csv',
+                                 'openfoam_case.zip','force_coefficients.csv'} or path.name.startswith('postprocess_'): continue
                 if path.is_dir(): shutil.copytree(path,target/path.name)
                 else: shutil.copy2(path,target/path.name)
             for name in ('0','constant','system'):
@@ -131,7 +134,12 @@ def register_recovery(router, data, config, job_row, details, db, lock, stamp, s
                 pattern=rf'(?m)^\s*{key}\s+[^;]+;'
                 text=re.sub(pattern,f'{key} {value};',text) if re.search(pattern,text) else text+f'\n{key} {value};\n'
             control.write_text(text)
+            numerics = None
+            if (target/'external_setup.json').is_file():
+                from backend.numerics import limit_nonorthogonal_correction
+                numerics = limit_nonorthogonal_correction(target/'openfoam_case')
             manifest={'stage':'OPENFOAM_SOLVE','parent_version':selected_version,'created':stamp(),'input_sha256':row['sha256'],'mesh':mesh_hash,'parameters':params,'parameter_sha256':hashlib.sha256(json.dumps(params,sort_keys=True).encode()).hexdigest(),'software':'OpenFOAM Foundation 13 (configured; see execution logs)','restart':'time zero; upstream mesh reused'}
+            manifest['numerics'] = numerics
             (target/'checkpoint.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
             with db() as c:
                 c.execute('INSERT INTO workflow_versions VALUES(?,?,?,?,?,?,?,?)',(job_id,version,inputs[0].name,row['sha256'],'solver_checkpoint','RUNNING',None,stamp()))

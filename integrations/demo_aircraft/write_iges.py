@@ -47,7 +47,7 @@ def parameters(face):
     return ",".join(f"{float(v):.10g}" if isinstance(v, float) else str(v) for v in values) + ";"
 
 
-def main():
+def main(patch_count=6):
     if OUT.exists():
         raise RuntimeError("Refusing to overwrite existing IGES fixture")
     sections = {"S": [], "G": [], "D": [], "P": []}
@@ -62,7 +62,7 @@ def main():
     global_data = global_data.replace(marker, f"{len(name)}H{name}")
     for start in range(0, len(global_data), 72):
         sections["G"].append(record(global_data[start:start+72], "G", len(sections["G"]) + 1))
-    for face in range(6):
+    for face in range(patch_count):
         directory_pointer = 2 * face + 1
         payload = parameters(face)
         chunks = [payload[i:i+64] for i in range(0, len(payload), 64)]
@@ -78,7 +78,7 @@ def main():
         for key in ("S", "G", "D", "P"):
             stream.writelines(sections[key])
         stream.write(record(terminator, "T", 1))
-    print(f"{OUT} {OUT.stat().st_size} bytes; 6 IGES type-128 patches")
+    print(f"{OUT} {OUT.stat().st_size} bytes; {patch_count} IGES type-128 patches")
 
 
 if __name__ == "__main__":

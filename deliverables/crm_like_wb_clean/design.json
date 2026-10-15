@@ -1,0 +1,19 @@
+{
+  "kind": "simplified_swept_wing_body_not_CRM",
+  "units": "mm",
+  "layout": "full symmetric wing-body; swept wings; no horizontal or vertical tail",
+  "bbox_min_mm": [
+    -750.0,
+    -581.5641432796757,
+    -75.0
+  ],
+  "bbox_max_mm": [
+    750.0,
+    581.5641432796757,
+    75.0
+  ],
+  "recommended_surface_length_mm": 12,
+  "IGES_patches": 384,
+  "CAD_type": "piecewise bilinear type128 surfaces",
+  "not_for": "DPW validation or substitution for the original CRM outer mold line"
+}

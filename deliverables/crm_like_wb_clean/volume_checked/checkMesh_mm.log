@@ -1,0 +1,95 @@
+/*---------------------------------------------------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  13
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+Build  : 13-18870c24d21c
+Exec   : checkMesh -case /mnt/f/Auto/FlowForge-CFD/data/workflows/fa32a5cd2eba4497bfd282ceed97da0c/v2/openfoam_case
+Date   : Oct 15 2026
+Time   : 10:15:25
+Host   : "LAPTOP-M6HPDD14"
+PID    : 302
+I/O    : uncollated
+Case   : /mnt/f/Auto/FlowForge-CFD/data/workflows/fa32a5cd2eba4497bfd282ceed97da0c/v2/openfoam_case
+nProcs : 1
+sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).
+fileModificationChecking : Monitoring run-time modified files using timeStampMaster (fileModificationSkew 10)
+allowSystemOperations : Allowing user-supplied system call operations
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+Create time
+
+--> FOAM Warning : 
+    From function static Foam::instantList Foam::timeSelector::select0(Foam::Time&, const Foam::argList&)
+    in file db/Time/timeSelector.C at line 269
+    No time specified or available, selecting 'constant'
+Create mesh for time = constant
+
+--> FOAM Warning : 
+    From function Foam::Istream& Foam::regIOobject::readStream(const Foam::word&, bool)
+    in file db/regIOobject/regIOobjectRead.C at line 169
+    Reading "/mnt/f/Auto/FlowForge-CFD/data/workflows/fa32a5cd2eba4497bfd282ceed97da0c/v2/openfoam_case/constant/polyMesh/faceZones" at line 8
+    Unexpected class name regIOobject, expected faceZoneList
+    while reading object faceZones
+--> FOAM Warning : 
+    From function Foam::Istream& Foam::regIOobject::readStream(const Foam::word&, bool)
+    in file db/regIOobject/regIOobjectRead.C at line 169
+    Reading "/mnt/f/Auto/FlowForge-CFD/data/workflows/fa32a5cd2eba4497bfd282ceed97da0c/v2/openfoam_case/constant/polyMesh/cellZones" at line 8
+    Unexpected class name regIOobject, expected cellZoneList
+    while reading object cellZones
+Time = constant
+
+Mesh stats
+    points:           65503
+    faces:            657734
+    internal faces:   641924
+    cells:            317343
+    faces per cell:   4.0954362
+    boundary patches: 2
+    point zones:      0
+    face zones:       0
+    cell zones:       0
+
+Overall number of cells of each type:
+    hexahedra:     0
+    prisms:        30186
+    wedges:        0
+    pyramids:      100
+    tet wedges:    0
+    tetrahedra:    287057
+    polyhedra:     0
+
+Checking topology...
+    Boundary definition OK.
+    Cell to face addressing OK.
+    Point usage OK.
+    Upper triangular ordering OK.
+    Face vertices OK.
+    Number of regions: 1 (OK).
+
+Checking patch topology for multiply connected surfaces...
+    Patch               Faces    Points   Surface topology                  
+    AIRCRAFT_WALL       10130    5067     ok (closed singly connected)      
+    FARFIELD            5680     2842     ok (closed singly connected)      
+
+Checking geometry...
+    Overall domain bounding box (-5999.0514 -5996.7812 -5999.9251) (5994.8618 5995.7062 5997.9613)
+    Mesh has 3 geometric (non-empty/wedge) directions (1 1 1)
+    Mesh has 3 solution (non-empty) directions (1 1 1)
+    Max cell openness = 2.6556151e-16 OK.
+    Max aspect ratio = 9.7081379 OK.
+    Minimum face area = 0.72885049. Maximum face area = 334466.64.  Face area magnitudes OK.
+    Min volume = 0.44915355. Max volume = 60849147.  Total volume = 9.0289381e+11.  Cell volumes OK.
+    Mesh non-orthogonality Max: 79.587844 average: 22.226152
+   *Number of severely non-orthogonal (> 70 degrees) faces: 32.
+    Non-orthogonality check OK.
+    Face pyramids OK.
+    Max skewness = 3.3454424 OK.
+    Coupled point location match (average 0) OK.
+
+Mesh OK.
+
+End
+

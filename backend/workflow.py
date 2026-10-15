@@ -30,6 +30,12 @@ def sha256(path):
 
 def register(app, data, root, config):
     router = APIRouter(prefix="/api/workflows")
+    from backend.crm_plan import CRMPlan
+
+    @router.post("/crm-plan")
+    def crm_plan(body: CRMPlan):
+        return body.preview()
+
     db_path = data / "flowforge.sqlite3"
     lock = threading.Lock()
     allowed_artifacts = {
@@ -39,8 +45,8 @@ def register(app, data, root, config):
         "surface_ansa.log": "surface/ansa.log", "aircraft_volume.pw": "pointwise/aircraft_volume.pw",
         "aircraft_volume.cgns": "pointwise/aircraft_volume.cgns",
         "pointwise.log": "pointwise/pointwise.log", "export.log": "pointwise/export.log",
-        "checkMesh.log": "checkMesh.log", "solver.log": "solver.log",
-        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json", "external_setup.json": "external_setup.json", "manual_pointwise.json": "manual_pointwise.json",
+        "checkMesh.log": "checkMesh.log", "checkMesh_mm.log": "checkMesh_mm.log", "solver.log": "solver.log",
+        "units.json": "openfoam_case/units.json", "checkpoint.json": "checkpoint.json", "external_setup.json": "external_setup.json", "manual_pointwise.json": "manual_pointwise.json", "surface_settings.json": "surface_settings.json",
         **{name: name for name in ("report.html", "result.json", "U.png", "p.png", "residuals.png", "external_flow.pvsm", "slice_centers.csv", "openfoam_case.zip", "postprocess_0.log", "postprocess_1.log", "postprocess_2.log")},
     }
 
@@ -122,11 +128,18 @@ def register(app, data, root, config):
             surface = json.loads(surface_report.read_text(encoding="utf-8")) if surface_report.is_file() else {}
         except (OSError, ValueError):
             surface = {}
+        if surface.get("status") == "error" and 0 < surface.get("shell", 0) < 1000:
+            job["error"] = f"表面网格过粗：目标尺寸 {surface.get('target_length_mm')} mm，仅生成 {surface['shell']} 个面单元，未达到当前流程至少 1000 个单元的密度门槛。请减小网格尺寸后以新版本重试；这不等于几何损坏。"
         surface_passed = (surface.get("status") == "meshed" and
                           (surface_dir / "surface.ansa").is_file() and
                           (surface_dir / "surface.stl").is_file() and
                           (surface_dir / "stl_quality.json").is_file())
         version_dir = surface_dir.parent
+        settings_path = version_dir / "surface_settings.json"
+        try:
+            surface_settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
+        except (OSError, ValueError):
+            surface_settings = {}
         pointwise_log = version_dir / "pointwise" / "pointwise.log"
         pointwise_passed = (pointwise_log.is_file() and "GENERIC_POINTWISE_STATUS=ok" in
                             pointwise_log.read_text(encoding="utf-8", errors="replace") and
@@ -136,6 +149,8 @@ def register(app, data, root, config):
             pointwise_passed = (export_log.is_file() and "OPENFOAM_EXPORT_STATUS=ok" in export_log.read_text(errors="replace") and
                                 (version_dir / "pointwise/aircraft_volume.pw").is_file())
         check_log = version_dir / "checkMesh.log"
+        mm_check_log = version_dir / "checkMesh_mm.log"
+        mm_failed = mm_check_log.is_file() and bool(re.search(r"Failed\s+\d+\s+mesh checks", mm_check_log.read_text(errors="replace")))
         mesh_passed = check_log.is_file() and "Mesh OK." in check_log.read_text(encoding="utf-8", errors="replace")
         solver_log = version_dir / "solver.log"
         solver_text = solver_log.read_text(encoding="utf-8", errors="replace") if solver_log.is_file() else ""
@@ -158,19 +173,21 @@ def register(app, data, root, config):
             return next((item["url"] for item in artifacts if item["name"] == name), None)
         pointwise_text = pointwise_log.read_text(encoding="utf-8", errors="replace") if pointwise_log.is_file() else ""
         cell_match = re.search(r"BLOCK_AFTER_CELLS=(\d+)", pointwise_text)
-        metrics = {"surface_elements": surface.get("shell"), "target_length_mm": surface.get("target_length_mm"),
+        metrics = {"surface_elements": surface.get("shell"), "target_length_mm": surface.get("target_length_mm", surface_settings.get("length_mm")),
                    "volume_cells": int(cell_match.group(1)) if pointwise_passed and cell_match else None,
                    "maximum_courant": max(courant) if courant else None,
                    "execution_passed": "\nEnd\n" in solver_text,
                    "numerical_checks_passed": solver_passed,
                    "physics_validated": False}
+        from backend.standard_process import assess
         return {**job, "versions": versions, "reviews": reviews,
+                "standard_assessment": assess(version_dir),
                 "surface": surface, "metrics": metrics, "artifacts": artifacts,
                 "stages": [{"name": "文件输入", "status": "PASSED"},
                            {"name": "ANSA 几何检查", "status": "PASSED" if any(r["version"] == job["version"] and r["decision"] == "APPROVED" for r in reviews) else job["status"], "evidence": evidence("geometry_report.json")},
                            {"name": "ANSA 表面网格", "status": "PASSED" if surface_passed else ("RUNNING" if job["stage"] == "ANSA_SURFACE" and job["status"] == "RUNNING" else "BLOCKED"), "evidence": evidence("surface_report.json")},
                            {"name": "Pointwise 体网格", "status": "PASSED" if pointwise_passed else "BLOCKED", "evidence": evidence("pointwise.log")},
-                           {"name": "OpenFOAM 网格检查", "status": "PASSED" if mesh_passed else "BLOCKED", "evidence": evidence("checkMesh.log")},
+                           {"name": "OpenFOAM 网格检查", "status": "PASSED" if mesh_passed else "FAILED" if mm_failed else "BLOCKED", "evidence": evidence("checkMesh.log") or evidence("checkMesh_mm.log")},
                            {"name": "OpenFOAM 求解", "status": "WAITING_FOR_REVIEW" if solver_passed and job["status"] != "RUNNING" else ("RUNNING" if job["stage"] == "OPENFOAM_SOLVE" and job["status"] == "RUNNING" else job["status"] if job["stage"] == "OPENFOAM_SOLVE" and job["status"] in {"FAILED", "WAITING_FOR_REVIEW"} else "FAILED" if solver_text else "BLOCKED"), "evidence": evidence("solver.log")},
                            {"name": "ParaView 后处理", "status": "PASSED" if solver_passed and (version_dir / "paraview_manifest.json").is_file() else "BLOCKED"},
                            {"name": "报告", "status": "PASSED" if solver_passed and (version_dir / "report.html").is_file() else "BLOCKED"}]}
@@ -284,10 +301,13 @@ def register(app, data, root, config):
             linux_case = f"/mnt/{drive}/{windows_case[3:]}"
             def foam(command, name):
                 with (directory / name).open("w", encoding="utf-8") as stream:
-                    proc = subprocess.run(["wsl.exe", "-d", "Ubuntu-F2", "--", "bash", "-lc",
-                                           f"source /opt/openfoam13/etc/bashrc; {command} -case '{linux_case}'"],
+                    proc = subprocess.run(["wsl.exe", "-d", os.getenv("FLOWFORGE_WSL_DISTRO", config.get("wsl_distro", "Ubuntu-F2")), "--", "bash", "-lc",
+                                           f"source /opt/openfoam13/etc/bashrc && {command} -case '{linux_case}'"],
                                           stdout=stream, stderr=subprocess.STDOUT, timeout=600)
-                log = (directory / name).read_text(encoding="utf-8", errors="replace")
+                raw = (directory / name).read_bytes()
+                log = raw.decode("utf-16-le" if b"\x00" in raw[:256] else "utf-8", errors="replace")
+                if "E_ACCESSDENIED" in log:
+                    raise PermissionError("WSL 拒绝访问，OpenFOAM 尚未执行；请使用有 WSL 访问权限的账户启动服务，无需修复几何。原始日志：" + name)
                 if proc.returncode or (command == "checkMesh" and "Mesh OK." not in log):
                     raise RuntimeError(f"OpenFOAM {command} failed; inspect {name}")
                 return log
@@ -307,6 +327,8 @@ def register(app, data, root, config):
             (case / "units.json").write_text(json.dumps({"source_unit": "mm", "target_unit": "m",
                 "scale": .001, "before_bbox_mm": before_box, "after_bbox_m": after_box}, indent=2), encoding="utf-8")
             status, error = "PAUSED", "Volume mesh and checkMesh passed; solver configuration requires review"
+        except PermissionError as exc:
+            status, error = "ERROR", str(exc)
         except Exception as exc:
             status, error = "NEEDS_MANUAL_REPAIR", str(exc)
         with lock, db() as connection:
@@ -550,9 +572,39 @@ def register(app, data, root, config):
         if directory.exists() and any(directory.iterdir()):
             raise HTTPException(409, "Surface attempt already exists; preserve its evidence before retrying")
         with lock, db() as connection:
+            (directory.parent / "surface_settings.json").write_text(json.dumps({
+                "length_mm": length_mm, "created": stamp(),
+                "review_project_sha256": sha256(directory.parent / "review.ansa")}, indent=2), encoding="utf-8")
             connection.execute("UPDATE workflow_jobs SET status='RUNNING',stage='ANSA_SURFACE',updated=?,error=NULL WHERE id=?",
                                (stamp(), job_id))
         threading.Thread(target=mesh_surface, args=(job_id, job["version"], length_mm), daemon=True).start()
+        return details(job_id)
+
+    @router.post("/{job_id}/retry-surface")
+    def retry_surface(job_id: str, length_mm: float = Query(..., ge=0.1, le=100)):
+        with lock:
+            job = job_row(job_id)
+            if job["profile"] != "general" or job["status"] == "RUNNING":
+                raise HTTPException(409, "请等待当前阶段结束")
+            with db() as connection:
+                previous = connection.execute("SELECT * FROM workflow_versions WHERE job_id=? AND version=?", (job_id, job["version"])).fetchone()
+                approved = connection.execute("SELECT 1 FROM workflow_reviews WHERE job_id=? AND version=? AND decision='APPROVED'", (job_id, job["version"])).fetchone()
+            old = data / "workflows" / job_id / f"v{job['version']}"
+            source = next(old.glob("input.*"), None)
+            if not approved or source is None or sha256(source) != previous["sha256"] or not (old / "review.ansa").is_file():
+                raise HTTPException(409, "几何审核证据缺失或输入已改变，必须先复检几何")
+            version = job["version"] + 1
+            target = old.parent / f"v{version}"
+            if target.exists(): raise HTTPException(409, "新版本目录已存在，不会覆盖旧记录")
+            target.mkdir()
+            for name in (source.name, "review.ansa", "geometry_report.json", "ansa.log"):
+                if (old / name).is_file(): shutil.copy2(old / name, target / name)
+            (target / "surface_settings.json").write_text(json.dumps({"parent_version": job["version"], "length_mm": length_mm, "geometry_sha256": previous["sha256"], "review_project_sha256": sha256(target / "review.ansa"), "created": stamp()}), encoding="utf-8")
+            with db() as connection:
+                connection.execute("INSERT INTO workflow_versions VALUES(?,?,?,?,?,?,?,?)", (job_id, version, previous["filename"], previous["sha256"], "surface_retry", "RUNNING", previous["report"], stamp()))
+                connection.execute("INSERT INTO workflow_reviews SELECT job_id,?,decision,reviewer,note,created FROM workflow_reviews WHERE job_id=? AND version=?", (version, job_id, job["version"]))
+                connection.execute("UPDATE workflow_jobs SET version=?,status='RUNNING',stage='ANSA_SURFACE',error=NULL,updated=? WHERE id=?", (version, stamp(), job_id))
+        threading.Thread(target=mesh_surface, args=(job_id, version, length_mm), daemon=True).start()
         return details(job_id)
 
     @router.get("/{job_id}/surface/{name}")
